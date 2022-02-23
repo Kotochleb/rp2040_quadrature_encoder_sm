@@ -1,76 +1,71 @@
-# Content
+# rp2040 quadrature encoder sm
 
-This repository contains bits and pieces that I made while trying to figure out how the Raspberry Pi Pico state machines and the Programmable Input/Output (PIO) work.
+This repository is fork of [GitJer/Some_RPI-Pico_stuff](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Rotary_encoder) and extracts only quadrature encoder code.
 
-[Here](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/handy_bits_and_pieces) I have written down the reusable 'tricks' I use in several of the projects listed below.
+# Rotary encoder for Raspberry Pi Pico using PIO code
 
-The following projects are contained in this repository:
+This software reads a rotary encoder with the Raspberry Pi Pico using PIO code. 
+The rotary encoder that is used is an optical encoder with very clean signals on its output, called A and B, so debouncing of these signals is unnecessary.
 
-## State machine emulator
-The problem with the state machines is that debuggers do not give the insight I need when writing code for a sm. I typically write some code, upload it to the pico and find that it doesn't do what I want it to do. Instead of guessing what I do wrong, I would like to see the values of e.g. the registers when the sm is executing. So, I made an [emulator](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/state_machine_emulator).
+<img src="rotary_encoder.jpg" width="300">
 
-## Two independently running state machines 
-[This](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Two_sm_simple) is just an example of two state machines running independently. Nothing special about it, but I had to do it.
+The specific encoder I use gives 600 pulses per 360 degrees rotation. For each pulse, 4 signal changes are measured, see the next figure from [wikipedia](https://en.wikipedia.org/wiki/Rotary_encoder#/media/File:Quadrature_Diagram.svg), so in total 2400 transitions are made for a full rotation.
 
-## Two independently running state machines, one gets disabled temporarily
-[This](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Two_sm_one_disabled) is an example of two state machines running independently, but one gets disabled temporarily.
+<img src="Quadrature_Diagram.png" width="300">
 
-## Two independently running state machines, synchronized via irq, one gets disabled temporarily
-[This](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Two_sm_one_disabled_with_irq) is an example of two state machines synchronized via setting and clearing an irq, one gets disabled temporarily.
+I have also tried a cheap simple rotary encoder, but only when turning very slowly does the result make any sense.
 
-## State machine writes into a buffer via DMA
-[This](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/sm_to_dma_to_buffer) is an example of a state machine using DMA (Direct Memory Access) to write into a buffer.
+## Other code
+This isn't the first code to read a rotary encoder using the PIO, see e.g. [pimoroni-pico](https://github.com/pimoroni/pimoroni-pico/blob/encoder-pio/drivers/encoder-pio/encoder.pio), which does timing and rudimentary debouncing. And it lets you choose non-consecutive pins. 
 
-## State Machine -> DMA -> State Machine -> DMA -> Buffer
-[This](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/sm_to_dma_to_sm_to_dma_to_buffer) is an example where one state machine writes via DMA to another state machine whose output is put into a buffer via another DMA channel.
+But this code uses interrupts in the PIO code to signal rotations to the C++ code. And maybe this can best be considered as an exercise on how to make something useful with:
+- 19 `jmp` instructions (one hidden in a `mov exec`)
+- 3 `in` instructions
+- 2 `irq` instructions
+- 1 `out` instruction
+- 1 `mov` instruction (well ... technically 2)
 
-## Communicating values between state machines 
-The [RP2040 Datasheet](https://datasheets.raspberrypi.org/rp2040/rp2040-datasheet.pdf) states that "State machines can not communicate data". Or can they ... Yes they can, in several ways, [including via GPIO pins](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Value_communication_between_two_sm_via_pins).
+But seriously, I wanted to play with a jump table in PIO code. This means setting the `.origin` to make sure the jump table is at a fixed position in instruction memory (0), and setting the initial program counter with `pio_sm_init(pio, sm, 16, &c)` to start at instruction location 16, i.e. after the jump table. It also means that the `mov exec` instruction is used to make a jump to the jump table.
 
-## Use the ISR for rotational shifting
-Normally if the ISR shifts via the `IN` instruction, the bits that come out of the ISR go to cyber space, never to be heard from again. Sometimes it is handy to have rotational shifting. [Right shifting works fine, but left shifting needs some trickery](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Rotational_shift_ISR).
+## Explanation of PIO code
+The first 15 addresses are a list of jumps, forming a jump table, that is later used to raise either an IRQ that signals a clockwise rotation or an IRQ to signal a counter clockwise rotation. See below.
 
-## 4x4 button matrix using PIO code
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/button_matrix_4x4) reads a 4x4 button matrix using PIO code for the Raspberry Pico and returns the button pressed.
+The important steps are explained in the figure below. There the program line number, the contents of the Output Shift Register (OSR) and the Input Shift Register (ISR) are shown.
 
-## Button debouncer using PIO code
-When using a GPIO to read noisy input, such as a mechanical button, a [software debouncer](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Button-debouncer) makes sure that only after the input signal has stabilized, the code will read the new value. 
+The program starts at line 16, which is only used as an initialization of the program: the two pins (whose values are denoted as A and B) of the rotary encoder are read into the ISR. The two rightmost bits are now AB. The other bits in the ISR do not play a role at this moment and are denoted as 'x'. 
 
-## PWM input using PIO code
-Most microcontrollers have hardware to produce Pulse Width Modulation (PWM) signals. But sometimes it is useful to be able to [read PWM signals](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/PwmIn) and determine the period, pulse width and duty cycle.
+The next step, line 17, is the actual start of the program: the content of the ISR is copied to the OSR. The two bits AB are to be used as the previous values, and are therefore denoted as A' and B'. 
 
-## Rotary encoder using PIO code
-[This software](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Rotary_encoder) reads an optical rotary encoder with very clean signals on its output using PIO code.
+Line 18 clears the ISR because the zero valued bits are needed later. Then, in two steps, the ISR gets shifted in the old values, A'B' from the OSR, and reads in two new readings of the rotary encoder (AB). 
 
-## HC-SR04 using the PIO code
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/HCSR04) reads the HC-SR04, an ultrasonic distance measurement unit.
+Now, at line 20, the 16 left most bits of the ISR contain: 000000000000A'B'AB.
+According to the [datasheet of the rp2040](https://datasheets.raspberrypi.org/rp2040/rp2040-datasheet.pdf) an unconditional jmp instruction without delay or side-set is, apart from the address to jump to, all zeros. And that is exactly what is now contained in the ISR: a jmp instruction to address 0A'B'AB. This is always an address in the first 16 program addresses (0-15). The PIO has an instruction to interpret the content of the ISR as an instruction and execute it: on line 20 the `mov exec ISR` does exactly this.
 
-## Ws2812 led strip with 120 pixels 
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/ws2812_led_strip_120) is my take on how to control a ws2812 led strip with 120 pixels
+<img src="code_explanation.png" width="800">
 
-## multiply two numbers 
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/multiplication) multiplies two numbers.
+## Jump table
 
-## Two pio programs in one file
-I wanted to see how I could use two pio programs in one file and use them from within the c/c++ program, see [here.](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/two_pio_programs_one_file) 
+The first 16 instructions form a jump table. The addresses represent the 12 legal transitions and 4 error transitions that can be found in the output of the rotary encoder. As described above, the address that is jumped to is represented by the two old values and the two current values of the output: A'B'AB. The 16 transitions are:
 
-## 1-wire protocol for one device 
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/Limited_1_wire) is a pio implementation of the 1-wire protocol.
-
-## Blow out a(n) LED
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/blow_out_a_LED) is a remake of the wonderfull little thingy made by Paul Dietz: blow on a LED to make it go out! Really!
-
-## Counting pulses in a pulse train separated by a pause 
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/count_pulses_with_pause) can be used for protocols where the data is encoded by a number of pulses in a pulse train followed by a pause.
-E.g. the LMT01 temperature sensor uses this, [see](https://www.reddit.com/r/raspberrypipico/comments/nis1ew/made_a_pulse_counter_for_the_lmt01_temperature/).
-
-## Subroutines in pioasm
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/subroutines) shows that subroutines in pioasm can be a thing and can - in some cases - be used to do more with the limited memory space than is possible with just writing the code in one program.
-
-## Read the SBUS protocol with (and without!) pio code
-The SBUS protocol is typically used in Radio Controlled cars, drones, etc. If you want to read this protocol from a RC receiver in order to manipulate the data before setting motors and servos, you can use [this code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/SBUS).
-
-## LED panel using PIO state machine and Direct Memory Access
-[This code](https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/ledpanel) shows how a pio state machine can drive led panels. It is made for
-two 64x64 led panels connected to form a 64 row x 128 column panel. There are 16 brightness levels for each Red, Green and Blue of each pixel, allowing many 
-colors. In its present form it updates the panel at about 144 Hz at standard clock settings (=125MHz.)
+```
+A'B'A B = meaning;                                                action
+--------------------------------------------------------------------------------------
+0 0 0 0 = transition from 00 to 00 = no change in reading;        do a jump to line 17
+0 0 0 1 = transition from 00 to 01 = clockwise rotation;          do a jump to CW  
+0 0 1 0 = transition from 00 to 10 = counter clockwise rotation;  do a jump to CCW
+0 0 1 1 = transition from 00 to 11 = error;                       do a jump to line 17
+0 1 0 0 = transition from 01 to 00 = counter clockwise rotation;  do a jump to CCW 
+0 1 0 1 = transition from 01 to 01 = no change in reading;        do a jump to line 17
+0 1 1 0 = transition from 01 to 10 = error;                       do a jump to line 17
+0 1 1 1 = transition from 01 to 11 = clockwise rotation;          do a jump to CW  
+1 0 0 0 = transition from 10 to 00 = clockwise rotation;          do a jump to CW  
+1 0 0 1 = transition from 10 to 01 = error;                       do a jump to line 17
+1 0 1 0 = transition from 10 to 10 = no change in reading;        do a jump to line 17
+1 0 1 1 = transition from 10 to 11 = counter clockwise rotation;  do a jump to CCW
+1 1 0 0 = transition from 11 to 00 = error;                       do a jump to line 17
+1 1 0 1 = transition from 11 to 01 = counter clockwise rotation;  do a jump to CCW
+1 1 1 0 = transition from 11 to 10 = clockwise rotation;          do a jump to CW  
+1 1 1 1 = transition from 11 to 11 = no change in reading;        do a jump to line 17
+```
+The jump to `CW` is a piece of code that sets `irq 0` and then jumps to line 17, the jump to `CCW` sets `irq 1` and then jumps to line 17.
+In the C++ code, the `irq 0` causes a counter called `rotation` to be increased, the `irq 1` causes it to be decreased.
