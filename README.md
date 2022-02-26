@@ -7,11 +7,11 @@ This repository is fork of [GitJer/Some_RPI-Pico_stuff](https://github.com/GitJe
 This software reads a rotary encoder with the Raspberry Pi Pico using PIO code. 
 The rotary encoder that is used is an optical encoder with very clean signals on its output, called A and B, so debouncing of these signals is unnecessary.
 
-<img src="rotary_encoder.jpg" width="300">
+<img src="docs/rotary_encoder.jpg" width="300">
 
 The specific encoder I use gives 600 pulses per 360 degrees rotation. For each pulse, 4 signal changes are measured, see the next figure from [wikipedia](https://en.wikipedia.org/wiki/Rotary_encoder#/media/File:Quadrature_Diagram.svg), so in total 2400 transitions are made for a full rotation.
 
-<img src="Quadrature_Diagram.png" width="300">
+<img src="docs/Quadrature_Diagram.png" width="300">
 
 I have also tried a cheap simple rotary encoder, but only when turning very slowly does the result make any sense.
 
@@ -41,7 +41,7 @@ Line 18 clears the ISR because the zero valued bits are needed later. Then, in t
 Now, at line 20, the 16 left most bits of the ISR contain: 000000000000A'B'AB.
 According to the [datasheet of the rp2040](https://datasheets.raspberrypi.org/rp2040/rp2040-datasheet.pdf) an unconditional jmp instruction without delay or side-set is, apart from the address to jump to, all zeros. And that is exactly what is now contained in the ISR: a jmp instruction to address 0A'B'AB. This is always an address in the first 16 program addresses (0-15). The PIO has an instruction to interpret the content of the ISR as an instruction and execute it: on line 20 the `mov exec ISR` does exactly this.
 
-<img src="code_explanation.png" width="800">
+<img src="docs/code_explanation.png" width="800">
 
 ## Jump table
 
